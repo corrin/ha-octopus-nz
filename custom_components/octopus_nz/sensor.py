@@ -167,10 +167,10 @@ class CurrentBandSensor(_LiveTariffSensor):
 
     _attr_translation_key = "current_band"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = list(BUCKET_SLUGS.values())
 
     def __init__(self, coordinator: OctopusNZCoordinator) -> None:
         super().__init__(coordinator, "current_band")
+        self._attr_options = list(BUCKET_SLUGS.values())
 
     @property
     def native_value(self) -> str | None:
