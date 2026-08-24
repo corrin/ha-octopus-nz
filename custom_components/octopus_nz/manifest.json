@@ -1,4 +1,4 @@
-{
+﻿{
   "domain": "octopus_nz",
   "name": "Octopus Energy NZ",
   "codeowners": ["@corrin"],
@@ -9,5 +9,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/corrin/ha-octopus-nz/issues",
   "requirements": [],
-  "version": "0.1.5"
+  "version": "0.1.6"
 }

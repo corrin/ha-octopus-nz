@@ -121,6 +121,13 @@ integration does not see.
   dump the parsed tariff and windows, which is the fastest way to see what your
   plan actually looks like.
 
+## Trademark
+
+This is an unofficial integration, not affiliated with or endorsed by Octopus
+Energy. The icon in `custom_components/octopus_nz/brand/` is Octopus Energy's
+own mark, taken from their public site and used to identify which supplier this
+integration talks to.
+
 ## License
 
-MIT
+MIT — the code. The brand icon remains the property of Octopus Energy.
