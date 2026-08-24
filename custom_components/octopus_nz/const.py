@@ -17,6 +17,10 @@ UPDATE_INTERVAL = timedelta(hours=1)
 # How far back to reach on the first run. Octopus retains about 12 months.
 INITIAL_BACKFILL_DAYS = 365
 
+# Window the headline sensors read. Wide enough to contain a complete day even
+# when the last two are still arriving.
+SUMMARY_DAYS = 7
+
 STATISTIC_CONSUMPTION = f"{DOMAIN}:electricity_consumption"
 STATISTIC_COST = f"{DOMAIN}:electricity_cost"
 

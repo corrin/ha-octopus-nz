@@ -14,9 +14,11 @@ from homeassistant.util import dt as dt_util
 
 from .api import OctopusNZApi, OctopusNZAuthError, OctopusNZError
 from .const import (
+    DAY_INTERVAL,
     DOMAIN,
     INITIAL_BACKFILL_DAYS,
     STATISTIC_CONSUMPTION,
+    SUMMARY_DAYS,
     UPDATE_INTERVAL,
 )
 from .statistics import async_import, async_last_sum
@@ -98,9 +100,41 @@ class OctopusNZCoordinator(DataUpdateCoordinator[OctopusNZData]):
         if rows:
             currency = self.hass.config.currency or "NZD"
             data.hours_written = await async_import(self.hass, rows, tariff, currency)
-            self._summarise(rows, data)
 
+        await self._async_summarise(data)
         return data
+
+    async def _async_summarise(self, data: OctopusNZData) -> None:
+        """Fill in the headline figures on their own fixed window.
+
+        These cannot be read off the statistics fetch: once the backfill is
+        done that window is only a couple of hours wide and never contains a
+        whole day, which would leave the daily sensor unknown for ever.
+        """
+        now = dt_util.utcnow()
+
+        days = await self.api.async_measurements(
+            self._property_id, now - timedelta(days=SUMMARY_DAYS), now, DAY_INTERVAL
+        )
+        # A day Octopus has only partly received comes back short, so duration
+        # is what distinguishes a complete day from one still filling up.
+        complete = [d for d in days if d.get("durationInSeconds") == 86400]
+        if complete:
+            newest = max(complete, key=lambda d: d["startAt"])
+            data.last_full_day = float(newest["value"])
+            data.last_full_day_date = (
+                dt_util.parse_datetime(newest["startAt"])
+                .astimezone(dt_util.get_default_time_zone())
+                .date()
+            )
+
+        recent = await self.api.async_measurements(
+            self._property_id, now - timedelta(days=3), now
+        )
+        if recent:
+            newest = max(recent, key=lambda r: r["startAt"])
+            data.latest_interval = float(newest["value"])
+            data.latest_interval_start = dt_util.parse_datetime(newest["startAt"])
 
     async def _async_fetch_new(self) -> list[dict]:
         """Everything metered since the last statistic, backfilling on first run."""
@@ -127,30 +161,3 @@ class OctopusNZCoordinator(DataUpdateCoordinator[OctopusNZData]):
             window_start = window_end
         return rows
 
-    @staticmethod
-    def _summarise(rows: list[dict], data: OctopusNZData) -> None:
-        """Fill in the headline figures the sensors show."""
-        timezone = dt_util.get_default_time_zone()
-        dated = []
-        for row in rows:
-            stamp = row.get("startAt") or row.get("readAt")
-            start = dt_util.parse_datetime(stamp) if stamp else None
-            if start is not None:
-                dated.append((start, float(row["value"])))
-        if not dated:
-            return
-        dated.sort()
-
-        data.latest_interval_start, data.latest_interval = dated[-1]
-
-        # The most recent day with a full set of intervals. Today and often
-        # yesterday are still incomplete, so the last complete day is the
-        # newest figure that can be trusted.
-        by_day: dict[Any, list[float]] = {}
-        for start, value in dated:
-            by_day.setdefault(start.astimezone(timezone).date(), []).append(value)
-        for day in sorted(by_day, reverse=True):
-            if len(by_day[day]) >= 48:
-                data.last_full_day = sum(by_day[day])
-                data.last_full_day_date = day
-                break
