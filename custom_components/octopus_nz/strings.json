@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Octopus Energy NZ",
+        "description": "Sign in with the email and password you use for the Octopus Energy NZ app.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "account": {
+        "title": "Choose an account",
+        "description": "This login has more than one account.",
+        "data": {
+          "account_number": "Account"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "Enter the current password for {email}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach Octopus Energy NZ.",
+      "invalid_auth": "That email and password were not accepted."
+    },
+    "abort": {
+      "already_configured": "That account is already set up.",
+      "reauth_successful": "Signed in again successfully."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "last_full_day": {
+        "name": "Last full day consumption"
+      },
+      "latest_interval": {
+        "name": "Latest interval consumption"
+      },
+      "balance": {
+        "name": "Account balance"
+      },
+      "daily_charge": {
+        "name": "Daily charge"
+      },
+      "current_band": {
+        "name": "Current tariff band",
+        "state": {
+          "night": "Night",
+          "off_peak": "Off-peak",
+          "peak": "Peak"
+        }
+      },
+      "current_rate": {
+        "name": "Current unit rate"
+      }
+    }
+  }
+}
