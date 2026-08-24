@@ -23,6 +23,11 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # The brands check passes only once octopus_nz is accepted into the
+          # home-assistant/brands repository, which is a separate PR there. It
+          # gates listing in the default HACS store; installing this as a
+          # custom repository does not depend on it.
+          ignore: brands
 
   ruff:
     name: ruff
