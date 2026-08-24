@@ -74,7 +74,6 @@ class LastFullDaySensor(OctopusNZEntity):
     _attr_translation_key = "last_full_day"
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.TOTAL
 
     def __init__(self, coordinator: OctopusNZCoordinator) -> None:
         super().__init__(coordinator, "last_full_day")
@@ -92,10 +91,13 @@ class LastFullDaySensor(OctopusNZEntity):
 class LatestIntervalSensor(OctopusNZEntity):
     """The most recent half-hour of metered consumption."""
 
+    # No state_class: the value belongs to a half hour that ended two days ago,
+    # so letting the recorder build statistics from it would file that energy
+    # under the moment it was fetched. The statistics module handles this series
+    # properly, against the interval's own timestamp.
     _attr_translation_key = "latest_interval"
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: OctopusNZCoordinator) -> None:
         super().__init__(coordinator, "latest_interval")
