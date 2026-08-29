@@ -9,6 +9,24 @@ obtainKrakenToken accepts email and password even though introspection hides
 both fields -- ObtainJSONWebTokenInput advertises only APIKey,
 organizationSecretKey, preSignedKey and refreshToken. Sending them returns a
 credential error (KT-CT-1138) rather than an unknown-field error.
+
+Data freshness is bounded by the tenant, not by the query. Readings stop at the
+most recent local midnight and a new whole day lands around 21:00 NZ; the newest
+half hour is therefore 21-45 hours old depending on when you ask. Everything
+that could plausibly beat that has been tried and cannot:
+
+  - property.measurements at RAW_INTERVAL -- "readings as provided", i.e. before
+    aggregation -- stops at the identical boundary, so the gap is upstream of
+    Kraken rather than an artefact of bucketing. HOUR_INTERVAL and DAY_INTERVAL
+    likewise; FIVE_MIN_INTERVAL and FIFTEEN_MIN_INTERVAL raise KT-CT-4710.
+  - readingQuality: ESTIMATE returns zero rows, so nothing is being estimated
+    forward into the gap for this ICP.
+  - Query.estimatedSupplyPointReadings does extrapolate past the actuals, but a
+    customer viewer gets KT-CT-1111 (permission denied). It is an ops field.
+  - supplyPoint.readings raises KT-CT-4721 for every ReadingTypes value on
+    NZL_ELECTRICITY. Present in the schema, unimplemented in this market.
+  - smartMeterTelemetry, which carries near-live consumption on the UK tenant,
+    does not exist in the NZ schema at all.
 """
 
 from __future__ import annotations

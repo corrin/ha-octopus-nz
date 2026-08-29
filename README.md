@@ -33,11 +33,27 @@ history immediately rather than starting from empty.
 | Latest interval consumption | The most recent metered half hour |
 | Account balance | Your Octopus balance |
 
-## The two-day lag, and what to do about it
+## When metered data arrives
 
-Metered data comes from the lines company and arrives about **two days late**.
-That is a property of New Zealand metering, not of this integration — no
-retailer API gives live readings.
+Not live, and not a rolling delay either. Kraken publishes **one whole calendar
+day at a time**, and the drop lands at about **21:00 NZ**, carrying the day that
+ended at the previous midnight. Nothing appears in between.
+
+So the newest half hour you hold sawtooths between about 21 and 45 hours old:
+
+| You look (NZ) | Newest interval ends | Age |
+|---|---|---|
+| Fri 09:00 | Thu 00:00 | 33 h |
+| Fri 20:59 | Thu 00:00 | 45 h |
+| Fri 21:05 | Fri 00:00 | 21 h |
+
+Practical consequence: **for yesterday's total, read after about 21:30.** Before
+that you are still looking at the day before.
+
+This is a property of New Zealand metering — the metering equipment provider
+files each day's half hours to the retailer the following day — and not
+something an integration can improve on. Every door in the Kraken NZ tenant
+stops at the same midnight boundary; see the dead ends in `api.py`.
 
 So:
 
