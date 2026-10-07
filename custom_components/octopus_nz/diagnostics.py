@@ -36,6 +36,13 @@ async def async_get_config_entry_diagnostics(
                     else None
                 ),
                 "last_full_day": data.last_full_day if data else None,
+                "latest_interval_export": data.latest_interval_export if data else None,
+                "latest_interval_export_start": (
+                    data.latest_interval_export_start.isoformat()
+                    if data and data.latest_interval_export_start
+                    else None
+                ),
+                "last_full_day_export": data.last_full_day_export if data else None,
                 "hours_written": data.hours_written if data else None,
             },
             REDACT,
@@ -46,6 +53,8 @@ async def async_get_config_entry_diagnostics(
                 "unit_rates": tariff.unit_rates,
                 "flat_rate": tariff.flat_rate,
                 "daily_charge": tariff.daily_charge,
+                "export_rates": tariff.export_rates,
+                "flat_export_rate": tariff.flat_export_rate,
                 "windows": [
                     {
                         "bucket": w.bucket,

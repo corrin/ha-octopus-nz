@@ -1,8 +1,8 @@
 # Octopus Energy NZ for Home Assistant
 
-Brings Octopus Energy **New Zealand** consumption, tariff bands and costs into
-Home Assistant, including a full year of backfilled history for the Energy
-dashboard.
+Brings Octopus Energy **New Zealand** consumption, solar export, tariff bands
+and costs into Home Assistant, including a full year of backfilled history for
+the Energy dashboard.
 
 > This is for Octopus Energy NZ. The widely used
 > [BottlecapDave integration](https://github.com/BottlecapDave/HomeAssistant-OctopusEnergy)
@@ -11,27 +11,39 @@ dashboard.
 
 ## What you get
 
-**Energy dashboard.** Two long-term statistics, written against the time the
+**Energy dashboard.** Long-term statistics, written against the time the
 energy was actually used:
 
 | Statistic | What |
 |---|---|
-| `octopus_nz:electricity_consumption` | kWh per hour |
-| `octopus_nz:electricity_cost` | Cost per hour, priced per time-of-use band |
+| `octopus_nz:electricity_consumption` | kWh imported per hour |
+| `octopus_nz:electricity_cost` | Cost per hour, priced per time-of-use band, plus the daily charge |
+| `octopus_nz:electricity_export` | kWh exported per hour (solar accounts) |
+| `octopus_nz:electricity_export_compensation` | What Octopus pays per hour for that export, priced per band (solar accounts) |
 
 On first run these backfill up to 12 months, so the Energy dashboard has
 history immediately rather than starting from empty.
+
+The export pair only appears once Octopus has attached export rates to your
+plan, which it does when the property is set up to export.
 
 **Sensors.**
 
 | Sensor | What |
 |---|---|
 | Current tariff band | `Peak` / `Off-peak` / `Night`, right now |
-| Current unit rate | $/kWh, right now |
+| Current unit rate | $/kWh you pay, right now |
+| Current export rate | $/kWh Octopus pays you, right now (solar accounts) |
 | Daily charge | The plan's fixed daily supply charge |
-| Last full day consumption | kWh for the most recent complete day |
-| Latest interval consumption | The most recent metered half hour |
+| Last full day consumption | kWh imported for the most recent complete day |
+| Latest interval consumption | The most recent metered half hour of import |
+| Last full day export | kWh exported for the most recent complete day (solar accounts) |
+| Latest interval export | The most recent metered half hour of export (solar accounts) |
 | Account balance | Your Octopus balance |
+
+Export rates are time-of-use too — on OctopusFlexi the peak export rate is
+higher than the off-peak one — so `Current export rate` is the sensor to
+automate battery discharge on.
 
 ## When metered data arrives
 
@@ -101,9 +113,23 @@ directory and restart.
 
 Sign in with the email and password you use for the Octopus Energy NZ app.
 
-Then add the grid source: **Settings → Dashboards → Energy → Add consumption**,
-and pick `octopus_nz:electricity_consumption`. Attach
-`octopus_nz:electricity_cost` as its cost statistic.
+Then wire it into the Energy dashboard at **Settings → Dashboards → Energy**,
+under **Electricity grid**:
+
+- **No grid source yet:** *Add consumption*, pick
+  `octopus_nz:electricity_consumption`, and under cost choose *Use an entity
+  tracking the total costs* → `octopus_nz:electricity_cost`. With solar, *Add
+  return* with `octopus_nz:electricity_export` and
+  `octopus_nz:electricity_export_compensation` as its compensation.
+- **Already have a grid source** (a Powerwall, a Shelly EM, an inverter):
+  keep its kWh and just attach the Octopus money to it — edit the source,
+  choose *Use an entity tracking the total costs* → `octopus_nz:electricity_cost`,
+  and for return *Use an entity tracking the total compensation* →
+  `octopus_nz:electricity_export_compensation`. Do not add the Octopus kWh as
+  a second grid source; that double-counts.
+
+Octopus prices the retailer's own meter data, which lands a day or two after
+a local meter, so the dashboard's money trails its kWh by that much.
 
 ### Why the password is stored
 
@@ -130,7 +156,9 @@ integration does not see.
 
 ## Notes
 
-- Solar export is read where present (`GENERATION` direction).
+- Export is read from the same meter data as consumption (`GENERATION`
+  direction) and priced with the plan's export rates, which Kraken files as
+  negative unit rates on the agreement.
 - Multiple accounts on one login are supported; add the integration once per
   account.
 - Diagnostics (Devices & Services → Octopus Energy NZ → Download diagnostics)

@@ -34,16 +34,25 @@ async def async_setup_entry(
 ) -> None:
     """Set up the sensors."""
     coordinator = entry.runtime_data
-    async_add_entities(
-        [
-            LastFullDaySensor(coordinator),
-            LatestIntervalSensor(coordinator),
-            BalanceSensor(coordinator),
-            CurrentBandSensor(coordinator),
-            CurrentRateSensor(coordinator),
-            DailyChargeSensor(coordinator),
+    entities: list[SensorEntity] = [
+        LastFullDaySensor(coordinator),
+        LatestIntervalSensor(coordinator),
+        BalanceSensor(coordinator),
+        CurrentBandSensor(coordinator),
+        CurrentRateSensor(coordinator),
+        DailyChargeSensor(coordinator),
+    ]
+    # Export rates only appear on the plan once the property is set up to
+    # export, so their absence means there is nothing to show. A house that
+    # gains solar later picks these up on the next reload.
+    tariff = coordinator.data.tariff if coordinator.data else None
+    if tariff and tariff.has_export:
+        entities += [
+            LastFullDayExportSensor(coordinator),
+            LatestIntervalExportSensor(coordinator),
+            CurrentExportRateSensor(coordinator),
         ]
-    )
+    async_add_entities(entities)
 
 
 def _device(coordinator: OctopusNZCoordinator) -> DeviceInfo:
@@ -109,6 +118,47 @@ class LatestIntervalSensor(OctopusNZEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str] | None:
         start = self.coordinator.data.latest_interval_start if self.coordinator.data else None
+        return {"interval_start": start.isoformat()} if start else None
+
+
+class LastFullDayExportSensor(OctopusNZEntity):
+    """Export for the most recent day with a complete set of intervals."""
+
+    _attr_translation_key = "last_full_day_export"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    def __init__(self, coordinator: OctopusNZCoordinator) -> None:
+        super().__init__(coordinator, "last_full_day_export")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.data.last_full_day_export if self.coordinator.data else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str] | None:
+        day = self.coordinator.data.last_full_day_export_date if self.coordinator.data else None
+        return {"date": day.isoformat()} if day else None
+
+
+class LatestIntervalExportSensor(OctopusNZEntity):
+    """The most recent half-hour of metered export."""
+
+    # No state_class, for the same reason as LatestIntervalSensor.
+    _attr_translation_key = "latest_interval_export"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    def __init__(self, coordinator: OctopusNZCoordinator) -> None:
+        super().__init__(coordinator, "latest_interval_export")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.data.latest_interval_export if self.coordinator.data else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str] | None:
+        start = self.coordinator.data.latest_interval_export_start if self.coordinator.data else None
         return {"interval_start": start.isoformat()} if start else None
 
 
@@ -208,4 +258,35 @@ class CurrentRateSensor(_LiveTariffSensor):
         return {
             BUCKET_SLUGS.get(bucket, bucket): rate
             for bucket, rate in tariff.unit_rates.items()
+        }
+
+
+class CurrentExportRateSensor(_LiveTariffSensor):
+    """What Octopus pays per kWh exported right now."""
+
+    _attr_translation_key = "current_export_rate"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 4
+
+    def __init__(self, coordinator: OctopusNZCoordinator) -> None:
+        super().__init__(coordinator, "current_export_rate")
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        currency = self.hass.config.currency or "NZD"
+        return f"{currency}/{UnitOfEnergy.KILO_WATT_HOUR}"
+
+    @property
+    def native_value(self) -> float | None:
+        tariff = self.coordinator.data.tariff if self.coordinator.data else None
+        return tariff.export_rate_at(self._now) if tariff else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, float] | None:
+        tariff = self.coordinator.data.tariff if self.coordinator.data else None
+        if not tariff or not tariff.export_rates:
+            return None
+        return {
+            BUCKET_SLUGS.get(bucket, bucket): rate
+            for bucket, rate in tariff.export_rates.items()
         }

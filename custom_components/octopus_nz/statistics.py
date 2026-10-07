@@ -1,4 +1,4 @@
-"""Import metered consumption and cost as long-term statistics.
+"""Import metered consumption, export and their money as long-term statistics.
 
 Readings arrive about two days late, so they can never be sensor states -- a
 sensor records the moment it is written. Statistics are written against the
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime
 
 from homeassistant.components.recorder import get_instance
@@ -30,7 +31,13 @@ from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, STATISTIC_CONSUMPTION, STATISTIC_COST
+from .const import (
+    DOMAIN,
+    STATISTIC_CONSUMPTION,
+    STATISTIC_COST,
+    STATISTIC_EXPORT,
+    STATISTIC_EXPORT_COMPENSATION,
+)
 from .tariff import Tariff
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,10 +72,13 @@ def _hourly(rows: list[dict]) -> dict[datetime, float]:
     return dict(buckets)
 
 
-def _cost_hourly(
-    rows: list[dict], tariff: Tariff, timezone
+def _priced_hourly(
+    rows: list[dict],
+    rate_at: Callable[[datetime], float | None],
+    timezone,
+    daily_charge: float | None = None,
 ) -> dict[datetime, float]:
-    """Cost per UTC hour, pricing each interval by the band it falls in."""
+    """Money per UTC hour, pricing each interval by the band it falls in."""
     buckets: dict[datetime, float] = defaultdict(float)
     charged_days: set = set()
     for row in rows:
@@ -79,7 +89,7 @@ def _cost_hourly(
         if start is None:
             continue
         local = start.astimezone(timezone)
-        rate = tariff.rate_at(local)
+        rate = rate_at(local)
         if rate is None:
             continue
         hour = dt_util.as_utc(start).replace(minute=0, second=0, microsecond=0)
@@ -87,10 +97,18 @@ def _cost_hourly(
 
         # The fixed daily charge lands once, on the first priced interval of
         # each local day, so a day's total matches the bill.
-        if tariff.daily_charge and local.date() not in charged_days:
+        if daily_charge and local.date() not in charged_days:
             charged_days.add(local.date())
-            buckets[hour] += tariff.daily_charge
+            buckets[hour] += daily_charge
     return dict(buckets)
+
+
+# (statistic_id, display name, unit, hour start -> value)
+_Series = tuple[str, str, str, dict[datetime, float]]
+
+# The recorder wants to know which converter a unit belongs to so it can offer
+# the statistic in other units. Money has no converter.
+_UNIT_CLASS = {UnitOfEnergy.KILO_WATT_HOUR: "energy"}
 
 
 async def async_import(
@@ -107,7 +125,7 @@ async def async_import(
         return 0
 
     timezone = dt_util.get_default_time_zone()
-    series: list[tuple[str, str, str, dict[datetime, float]]] = [
+    series: list[_Series] = [
         (
             STATISTIC_CONSUMPTION,
             "Octopus NZ Electricity Consumption",
@@ -121,10 +139,52 @@ async def async_import(
                 STATISTIC_COST,
                 "Octopus NZ Electricity Cost",
                 currency,
-                _cost_hourly(rows, tariff, timezone),
+                _priced_hourly(rows, tariff.rate_at, timezone, tariff.daily_charge),
             )
         )
+    return await _async_write(hass, series)
 
+
+async def async_import_export(
+    hass: HomeAssistant,
+    rows: list[dict],
+    tariff: Tariff | None,
+    currency: str,
+) -> int:
+    """Write export (and what Octopus pays for it, where known) statistics.
+
+    The compensation series is what the Energy dashboard wants as the grid
+    source's "return to grid" cost statistic. No daily charge: that is billed
+    against import only.
+
+    Returns the number of hours written.
+    """
+    if not rows:
+        return 0
+
+    timezone = dt_util.get_default_time_zone()
+    series: list[_Series] = [
+        (
+            STATISTIC_EXPORT,
+            "Octopus NZ Electricity Export",
+            UnitOfEnergy.KILO_WATT_HOUR,
+            _hourly(rows),
+        )
+    ]
+    if tariff and tariff.has_export:
+        series.append(
+            (
+                STATISTIC_EXPORT_COMPENSATION,
+                "Octopus NZ Electricity Export Compensation",
+                currency,
+                _priced_hourly(rows, tariff.export_rate_at, timezone),
+            )
+        )
+    return await _async_write(hass, series)
+
+
+async def _async_write(hass: HomeAssistant, series: list[_Series]) -> int:
+    """Append each series to its statistic, skipping hours already summed in."""
     written = 0
     for statistic_id, name, unit, hourly in series:
         if not hourly:
@@ -154,6 +214,7 @@ async def async_import(
                 source=DOMAIN,
                 statistic_id=statistic_id,
                 unit_of_measurement=unit,
+                unit_class=_UNIT_CLASS.get(unit),
             ),
             points,
         )

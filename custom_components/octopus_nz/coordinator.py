@@ -14,14 +14,18 @@ from homeassistant.util import dt as dt_util
 
 from .api import OctopusNZApi, OctopusNZAuthError, OctopusNZError
 from .const import (
+    CONSUMPTION,
     DAY_INTERVAL,
     DOMAIN,
+    GENERATION,
     INITIAL_BACKFILL_DAYS,
     STATISTIC_CONSUMPTION,
+    STATISTIC_EXPORT,
     SUMMARY_DAYS,
+    THIRTY_MIN_INTERVAL,
     UPDATE_INTERVAL,
 )
-from .statistics import async_import, async_last_sum
+from .statistics import async_import, async_import_export, async_last_sum
 from .tariff import Tariff, parse_tariff, pick_agreement
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,6 +47,10 @@ class OctopusNZData:
     latest_interval_start: datetime | None = None
     last_full_day: float | None = None
     last_full_day_date: Any = None
+    latest_interval_export: float | None = None
+    latest_interval_export_start: datetime | None = None
+    last_full_day_export: float | None = None
+    last_full_day_export_date: Any = None
     hours_written: int = 0
 
 
@@ -92,19 +100,27 @@ class OctopusNZCoordinator(DataUpdateCoordinator[OctopusNZData]):
             tariff=tariff,
         )
 
+        currency = self.hass.config.currency or "NZD"
         try:
-            rows = await self._async_fetch_new()
+            rows = await self._async_fetch_new(STATISTIC_CONSUMPTION, CONSUMPTION)
+            if rows:
+                data.hours_written = await async_import(self.hass, rows, tariff, currency)
+
+            # Export only exists once Octopus has attached export rates to the
+            # plan, so a house without solar never accrues an empty statistic.
+            if tariff and tariff.has_export:
+                rows = await self._async_fetch_new(STATISTIC_EXPORT, GENERATION)
+                if rows:
+                    await async_import_export(self.hass, rows, tariff, currency)
+
+            await self._async_summarise(data, CONSUMPTION)
+            if tariff and tariff.has_export:
+                await self._async_summarise(data, GENERATION)
         except OctopusNZError as err:
             raise UpdateFailed(str(err)) from err
-
-        if rows:
-            currency = self.hass.config.currency or "NZD"
-            data.hours_written = await async_import(self.hass, rows, tariff, currency)
-
-        await self._async_summarise(data)
         return data
 
-    async def _async_summarise(self, data: OctopusNZData) -> None:
+    async def _async_summarise(self, data: OctopusNZData, direction: str) -> None:
         """Fill in the headline figures on their own fixed window.
 
         These cannot be read off the statistics fetch: once the backfill is
@@ -112,38 +128,48 @@ class OctopusNZCoordinator(DataUpdateCoordinator[OctopusNZData]):
         whole day, which would leave the daily sensor unknown for ever.
         """
         now = dt_util.utcnow()
+        export = direction == GENERATION
 
         days = await self.api.async_measurements(
-            self._property_id, now - timedelta(days=SUMMARY_DAYS), now, DAY_INTERVAL
+            self._property_id, now - timedelta(days=SUMMARY_DAYS), now, DAY_INTERVAL, direction
         )
         # A day Octopus has only partly received comes back short, so duration
         # is what distinguishes a complete day from one still filling up.
         complete = [d for d in days if d.get("durationInSeconds") == 86400]
         if complete:
             newest = max(complete, key=lambda d: d["startAt"])
-            data.last_full_day = float(newest["value"])
-            data.last_full_day_date = (
+            value = float(newest["value"])
+            date = (
                 dt_util.parse_datetime(newest["startAt"])
                 .astimezone(dt_util.get_default_time_zone())
                 .date()
             )
+            if export:
+                data.last_full_day_export, data.last_full_day_export_date = value, date
+            else:
+                data.last_full_day, data.last_full_day_date = value, date
 
         recent = await self.api.async_measurements(
-            self._property_id, now - timedelta(days=3), now
+            self._property_id, now - timedelta(days=3), now, THIRTY_MIN_INTERVAL, direction
         )
         if recent:
             newest = max(recent, key=lambda r: r["startAt"])
-            data.latest_interval = float(newest["value"])
-            data.latest_interval_start = dt_util.parse_datetime(newest["startAt"])
+            value = float(newest["value"])
+            start = dt_util.parse_datetime(newest["startAt"])
+            if export:
+                data.latest_interval_export, data.latest_interval_export_start = value, start
+            else:
+                data.latest_interval, data.latest_interval_start = value, start
 
-    async def _async_fetch_new(self) -> list[dict]:
+    async def _async_fetch_new(self, statistic_id: str, direction: str) -> list[dict]:
         """Everything metered since the last statistic, backfilling on first run."""
-        _, last_start = await async_last_sum(self.hass, STATISTIC_CONSUMPTION)
+        _, last_start = await async_last_sum(self.hass, statistic_id)
         now = dt_util.utcnow()
         if last_start is None:
             start = now - timedelta(days=INITIAL_BACKFILL_DAYS)
             _LOGGER.info(
-                "No existing statistics; backfilling %d days for %s",
+                "No existing %s statistics; backfilling %d days for %s",
+                direction.lower(),
                 INITIAL_BACKFILL_DAYS,
                 self.account_number,
             )
@@ -156,8 +182,9 @@ class OctopusNZCoordinator(DataUpdateCoordinator[OctopusNZData]):
         while window_start < now:
             window_end = min(window_start + _MAX_WINDOW, now)
             rows.extend(
-                await self.api.async_measurements(self._property_id, window_start, window_end)
+                await self.api.async_measurements(
+                    self._property_id, window_start, window_end, THIRTY_MIN_INTERVAL, direction
+                )
             )
             window_start = window_end
         return rows
-

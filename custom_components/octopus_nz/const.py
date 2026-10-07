@@ -23,6 +23,8 @@ SUMMARY_DAYS = 7
 
 STATISTIC_CONSUMPTION = f"{DOMAIN}:electricity_consumption"
 STATISTIC_COST = f"{DOMAIN}:electricity_cost"
+STATISTIC_EXPORT = f"{DOMAIN}:electricity_export"
+STATISTIC_EXPORT_COMPENSATION = f"{DOMAIN}:electricity_export_compensation"
 
 # Kraken's time-of-use bucket names mapped to enum states. Octopus NZ shows
 # these to customers as Night, Off-peak and Peak; the display strings come from
