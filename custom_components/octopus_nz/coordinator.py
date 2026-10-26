@@ -14,6 +14,8 @@ from homeassistant.util import dt as dt_util
 
 from .api import OctopusNZApi, OctopusNZAuthError, OctopusNZError
 from .const import (
+    CONF_LEGACY_IDS,
+    CONF_PROPERTY_ID,
     CONSUMPTION,
     DAY_INTERVAL,
     DOMAIN,
@@ -25,6 +27,7 @@ from .const import (
     THIRTY_MIN_INTERVAL,
     UPDATE_INTERVAL,
 )
+from .properties import is_live, live_properties, property_label
 from .statistics import async_import, async_import_export, async_last_sum
 from .tariff import Tariff, parse_tariff, pick_agreement
 
@@ -39,6 +42,7 @@ class OctopusNZData:
     """What the sensors read."""
 
     account_number: str
+    property_id: str | None = None
     status: str | None = None
     balance: float | None = None
     address: str | None = None
@@ -63,6 +67,8 @@ class OctopusNZCoordinator(DataUpdateCoordinator[OctopusNZData]):
         entry: ConfigEntry,
         api: OctopusNZApi,
         account_number: str,
+        property_id: str | None,
+        legacy_ids: bool,
     ) -> None:
         super().__init__(
             hass,
@@ -73,7 +79,59 @@ class OctopusNZCoordinator(DataUpdateCoordinator[OctopusNZData]):
         )
         self.api = api
         self.account_number = account_number
-        self._property_id: str | None = None
+        # None only for an entry made before per-property entries, until the
+        # first sync pins it to its live property.
+        self.property_id = property_id
+        self.legacy_ids = legacy_ids
+        self.property_label: str | None = None
+
+    @property
+    def key(self) -> str:
+        """Prefix for this entry's device and entity unique ids."""
+        if self.legacy_ids:
+            return self.account_number
+        return f"{self.account_number}_{self.property_id}"
+
+    @property
+    def _statistic_suffix(self) -> str:
+        return "" if self.legacy_ids else f"_{self.property_id}"
+
+    def _find_property(self, properties: list[dict]) -> dict:
+        """This entry's property, pinning a pre-per-property entry on first sight."""
+        if self.property_id is not None:
+            for prop in properties:
+                if prop["id"] == self.property_id:
+                    return prop
+            raise UpdateFailed(
+                f"Property {self.property_id} is no longer on account {self.account_number}"
+            )
+
+        # An entry from before per-property entries read properties[0], which
+        # can be a property whose supply has ended. Read the first live one
+        # instead, and pin it once it is known to be live so a second live
+        # property can never take its place.
+        prop = live_properties(properties)[0]
+        if is_live(prop):
+            self.property_id = prop["id"]
+            entry = self.config_entry
+            unique_id = f"{self.account_number}_{prop['id']}"
+            taken = any(
+                other.unique_id == unique_id
+                for other in self.hass.config_entries.async_entries(DOMAIN)
+                if other.entry_id != entry.entry_id
+            )
+            self.hass.config_entries.async_update_entry(
+                entry,
+                data={**entry.data, CONF_PROPERTY_ID: prop["id"], CONF_LEGACY_IDS: True},
+                unique_id=entry.unique_id if taken else unique_id,
+            )
+            _LOGGER.info(
+                "Account %s: reading property %s (%s), the one Octopus supplies now",
+                self.account_number,
+                prop["id"],
+                property_label(prop),
+            )
+        return prop
 
     async def _async_update_data(self) -> OctopusNZData:
         try:
@@ -86,32 +144,39 @@ class OctopusNZCoordinator(DataUpdateCoordinator[OctopusNZData]):
         properties = account.get("properties") or []
         if not properties:
             raise UpdateFailed("Account has no properties")
-        self._property_id = properties[0]["id"]
+        prop = self._find_property(properties)
+        self._property_id = prop["id"]
+        self.property_label = property_label(prop)
 
-        agreement = pick_agreement(account)
+        agreement = pick_agreement(prop)
         tariff = parse_tariff(agreement) if agreement else None
 
         data = OctopusNZData(
             account_number=self.account_number,
+            property_id=prop["id"],
             status=account.get("status"),
             # Kraken holds balances in cents.
             balance=(account["balance"] / 100.0 if account.get("balance") is not None else None),
-            address=properties[0].get("address"),
+            address=prop.get("address"),
             tariff=tariff,
         )
 
         currency = self.hass.config.currency or "NZD"
+        suffix = self._statistic_suffix
+        label = None if self.legacy_ids else self.property_label
         try:
-            rows = await self._async_fetch_new(STATISTIC_CONSUMPTION, CONSUMPTION)
+            rows = await self._async_fetch_new(f"{STATISTIC_CONSUMPTION}{suffix}", CONSUMPTION)
             if rows:
-                data.hours_written = await async_import(self.hass, rows, tariff, currency)
+                data.hours_written = await async_import(
+                    self.hass, rows, tariff, currency, suffix, label
+                )
 
             # Export only exists once Octopus has attached export rates to the
             # plan, so a house without solar never accrues an empty statistic.
             if tariff and tariff.has_export:
-                rows = await self._async_fetch_new(STATISTIC_EXPORT, GENERATION)
+                rows = await self._async_fetch_new(f"{STATISTIC_EXPORT}{suffix}", GENERATION)
                 if rows:
-                    await async_import_export(self.hass, rows, tariff, currency)
+                    await async_import_export(self.hass, rows, tariff, currency, suffix, label)
 
             await self._async_summarise(data, CONSUMPTION)
             if tariff and tariff.has_export:

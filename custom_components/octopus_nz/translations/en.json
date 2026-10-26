@@ -16,6 +16,13 @@
           "account_number": "Account"
         }
       },
+      "property": {
+        "title": "Choose a property",
+        "description": "Account {account} is supplying more than one property. Choose the one to add; add the integration again for the other.",
+        "data": {
+          "property_id": "Property"
+        }
+      },
       "reauth_confirm": {
         "title": "Sign in again",
         "description": "Enter the current password for {email}.",
@@ -29,7 +36,9 @@
       "invalid_auth": "That email and password were not accepted."
     },
     "abort": {
-      "already_configured": "That account is already set up.",
+      "already_configured": "That property is already set up.",
+      "cannot_connect": "Could not reach Octopus Energy NZ.",
+      "no_properties": "That account has no properties.",
       "reauth_successful": "Signed in again successfully."
     }
   },

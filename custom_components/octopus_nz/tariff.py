@@ -98,7 +98,7 @@ def _parse_time(raw: str) -> time:
 
 
 def parse_tariff(agreement: dict[str, Any]) -> Tariff:
-    """Build a Tariff from one account.agreements[] node."""
+    """Build a Tariff from one Agreement node."""
     tariff = Tariff(name=agreement.get("displayName") or "")
 
     for band in agreement.get("timeOfUseScheme") or []:
@@ -134,9 +134,18 @@ def parse_tariff(agreement: dict[str, Any]) -> Tariff:
     return tariff
 
 
-def pick_agreement(account: dict[str, Any]) -> dict[str, Any] | None:
-    """The agreement in force -- the latest by validFrom."""
-    agreements = account.get("agreements") or []
+def pick_agreement(prop: dict[str, Any]) -> dict[str, Any] | None:
+    """The plan for one property: its meter's active agreement.
+
+    Agreements belong to a meter point, not the account, so two properties on
+    one account can be on different plans. A property with no active agreement
+    (supply ended, or not started yet) falls back to its latest by validFrom.
+    """
+    meters = prop.get("meterPoints") or []
+    for meter in meters:
+        if meter.get("activeAgreement"):
+            return meter["activeAgreement"]
+    agreements = [a for meter in meters for a in meter.get("agreements") or []]
     if not agreements:
         return None
     return max(agreements, key=lambda a: a.get("validFrom") or "")

@@ -59,9 +59,16 @@ async def async_setup_entry(
 
 
 def _device(coordinator: OctopusNZCoordinator) -> DeviceInfo:
+    # One device per entry. An entry from before per-property entries keeps the
+    # account-named device it always had.
+    name = (
+        f"Octopus NZ {coordinator.account_number}"
+        if coordinator.legacy_ids
+        else f"Octopus NZ {coordinator.property_label or coordinator.property_id}"
+    )
     return DeviceInfo(
-        identifiers={(DOMAIN, coordinator.account_number)},
-        name=f"Octopus NZ {coordinator.account_number}",
+        identifiers={(DOMAIN, coordinator.key)},
+        name=name,
         manufacturer="Octopus Energy NZ",
         model=(coordinator.data.tariff.name if coordinator.data and coordinator.data.tariff else None),
         entry_type=DeviceEntryType.SERVICE,
@@ -76,7 +83,7 @@ class OctopusNZEntity(CoordinatorEntity[OctopusNZCoordinator], SensorEntity):
 
     def __init__(self, coordinator: OctopusNZCoordinator, key: str) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.account_number}_{key}"
+        self._attr_unique_id = f"{coordinator.key}_{key}"
         self._attr_device_info = _device(coordinator)
 
 

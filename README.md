@@ -24,6 +24,11 @@ energy was actually used:
 On first run these backfill up to 12 months, so the Energy dashboard has
 history immediately rather than starting from empty.
 
+Each statistic id ends in the property id, for example
+`octopus_nz:electricity_consumption_5130`, so two properties keep separate
+series (see [More than one property](#more-than-one-property)). Entries set
+up before per-property support keep the plain ids above.
+
 The export pair only appears once Octopus has attached export rates to your
 plan, which it does when the property is set up to export.
 
@@ -112,6 +117,8 @@ directory and restart.
 ## Configure
 
 Sign in with the email and password you use for the Octopus Energy NZ app.
+If the login has more than one account, or the account supplies more than one
+property, you are asked which.
 
 Then wire it into the Energy dashboard at **Settings → Dashboards → Energy**,
 under **Electricity grid**:
@@ -130,6 +137,22 @@ under **Electricity grid**:
 
 Octopus prices the retailer's own meter data, which lands a day or two after
 a local meter, so the dashboard's money trails its kWh by that much.
+
+### More than one property
+
+Each entry reads one property, with its own device, sensors, statistics and
+plan: agreements belong to a property's meter, so a house and a bach on one
+account can be on different rates. To add the second, add the integration
+again and choose it.
+
+An account also keeps properties you have moved out of. Only properties
+Octopus supplies now (whose meter has an active agreement) are offered, so a
+single current property is picked without asking.
+
+An entry set up before this is pinned to the account's current property on its
+first sync and keeps its statistic ids, entity ids and device, so history and
+dashboards carry on. Before, such an entry read whichever property Kraken
+listed first, which could be one whose supply had ended.
 
 ### Why the password is stored
 
@@ -159,8 +182,9 @@ integration does not see.
 - Export is read from the same meter data as consumption (`GENERATION`
   direction) and priced with the plan's export rates, which Kraken files as
   negative unit rates on the agreement.
-- Multiple accounts on one login are supported; add the integration once per
-  account.
+- Multiple accounts and multiple properties are supported; add the
+  integration once per property.
+- Tests: `pip install pytest-homeassistant-custom-component`, then `pytest`.
 - Diagnostics (Devices & Services → Octopus Energy NZ → Download diagnostics)
   dump the parsed tariff and windows, which is the fastest way to see what your
   plan actually looks like.

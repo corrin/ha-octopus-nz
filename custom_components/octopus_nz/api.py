@@ -58,25 +58,33 @@ mutation($i: ObtainJSONWebTokenInput!) {
 _VIEWER = """
 query { viewer { fullName accounts { number } } }"""
 
+# Agreements are read per meter point rather than from account.agreements:
+# they belong to a meter, so each property gets its own plan, and
+# activeAgreement is null for a property whose supply has ended.
 _ACCOUNT = """
+fragment Plan on Agreement {
+  id
+  displayName
+  validFrom
+  rates {
+    displayLabel
+    touBucketName
+    unitType
+    rateIncludingTax
+    rateExcludingTax
+  }
+  timeOfUseScheme { name times { dayOfWeek start end } }
+}
 query($n: String!) {
   account(accountNumber: $n) {
     number
     status
     balance
-    properties { id address }
-    agreements {
+    properties {
       id
-      displayName
-      validFrom
-      rates {
-        displayLabel
-        touBucketName
-        unitType
-        rateIncludingTax
-        rateExcludingTax
-      }
-      timeOfUseScheme { name times { dayOfWeek start end } }
+      address
+      label
+      meterPoints { id activeAgreement { ...Plan } agreements { ...Plan } }
     }
   }
   supplyPoints(accountNumber: $n, first: 10) {
@@ -193,7 +201,7 @@ class OctopusNZApi:
         return viewer.get("fullName") or "", accounts
 
     async def async_account(self, account_number: str) -> dict[str, Any]:
-        """Account details, properties, tariff rates and time-of-use windows."""
+        """Account details, and each property's meter points and their plans."""
         data = await self.async_query(_ACCOUNT, {"n": account_number})
         account = data["account"]
         account["supply_points"] = [e["node"] for e in data["supplyPoints"]["edges"]]

@@ -29,6 +29,8 @@ async def async_get_config_entry_diagnostics(
                 "balance": data.balance if data else None,
                 "address": data.address if data else None,
                 "account_number": data.account_number if data else None,
+                "property_id": data.property_id if data else None,
+                "legacy_ids": coordinator.legacy_ids,
                 "latest_interval": data.latest_interval if data else None,
                 "latest_interval_start": (
                     data.latest_interval_start.isoformat()

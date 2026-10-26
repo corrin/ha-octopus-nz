@@ -111,13 +111,24 @@ _Series = tuple[str, str, str, dict[datetime, float]]
 _UNIT_CLASS = {UnitOfEnergy.KILO_WATT_HOUR: "energy"}
 
 
+def _name(base: str, label: str | None) -> str:
+    """Display name, naming the property when the entry has its own series."""
+    return f"{base} ({label})" if label else base
+
+
 async def async_import(
     hass: HomeAssistant,
     rows: list[dict],
     tariff: Tariff | None,
     currency: str,
+    suffix: str = "",
+    label: str | None = None,
 ) -> int:
     """Write consumption (and cost, where a tariff is known) statistics.
+
+    suffix and label make the series one property's own: statistic ids gain the
+    suffix and names the label. Both are empty for an entry that predates
+    per-property entries, so it keeps writing to the ids it always has.
 
     Returns the number of hours written.
     """
@@ -127,8 +138,8 @@ async def async_import(
     timezone = dt_util.get_default_time_zone()
     series: list[_Series] = [
         (
-            STATISTIC_CONSUMPTION,
-            "Octopus NZ Electricity Consumption",
+            f"{STATISTIC_CONSUMPTION}{suffix}",
+            _name("Octopus NZ Electricity Consumption", label),
             UnitOfEnergy.KILO_WATT_HOUR,
             _hourly(rows),
         )
@@ -136,8 +147,8 @@ async def async_import(
     if tariff and (tariff.has_time_of_use or tariff.flat_rate is not None):
         series.append(
             (
-                STATISTIC_COST,
-                "Octopus NZ Electricity Cost",
+                f"{STATISTIC_COST}{suffix}",
+                _name("Octopus NZ Electricity Cost", label),
                 currency,
                 _priced_hourly(rows, tariff.rate_at, timezone, tariff.daily_charge),
             )
@@ -150,12 +161,14 @@ async def async_import_export(
     rows: list[dict],
     tariff: Tariff | None,
     currency: str,
+    suffix: str = "",
+    label: str | None = None,
 ) -> int:
     """Write export (and what Octopus pays for it, where known) statistics.
 
     The compensation series is what the Energy dashboard wants as the grid
     source's "return to grid" cost statistic. No daily charge: that is billed
-    against import only.
+    against import only. suffix and label are as for async_import.
 
     Returns the number of hours written.
     """
@@ -165,8 +178,8 @@ async def async_import_export(
     timezone = dt_util.get_default_time_zone()
     series: list[_Series] = [
         (
-            STATISTIC_EXPORT,
-            "Octopus NZ Electricity Export",
+            f"{STATISTIC_EXPORT}{suffix}",
+            _name("Octopus NZ Electricity Export", label),
             UnitOfEnergy.KILO_WATT_HOUR,
             _hourly(rows),
         )
@@ -174,8 +187,8 @@ async def async_import_export(
     if tariff and tariff.has_export:
         series.append(
             (
-                STATISTIC_EXPORT_COMPENSATION,
-                "Octopus NZ Electricity Export Compensation",
+                f"{STATISTIC_EXPORT_COMPENSATION}{suffix}",
+                _name("Octopus NZ Electricity Export Compensation", label),
                 currency,
                 _priced_hourly(rows, tariff.export_rate_at, timezone),
             )

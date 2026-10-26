@@ -5,6 +5,11 @@ from datetime import timedelta
 DOMAIN = "octopus_nz"
 
 CONF_ACCOUNT_NUMBER = "account_number"
+CONF_PROPERTY_ID = "property_id"
+# Set on entries made before each property had its own entry. They keep the
+# statistic ids and entity unique ids they were created with, so history and
+# dashboards carry on; entries made since add the property id to both.
+CONF_LEGACY_IDS = "legacy_ids"
 
 # Kraken's NZ tenant. Each Octopus country runs its own tenant on its own host;
 # the UK endpoint does not serve NZ accounts.

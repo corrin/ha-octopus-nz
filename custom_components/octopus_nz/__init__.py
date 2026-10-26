@@ -9,7 +9,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import OctopusNZApi, OctopusNZAuthError, OctopusNZError
-from .const import CONF_ACCOUNT_NUMBER
+from .const import CONF_ACCOUNT_NUMBER, CONF_LEGACY_IDS, CONF_PROPERTY_ID
 from .coordinator import OctopusNZCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
@@ -32,8 +32,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: OctopusNZConfigEntry) ->
     except OctopusNZError as err:
         raise ConfigEntryNotReady(str(err)) from err
 
+    # An entry without a property id predates per-property entries: it keeps
+    # its original statistic and entity ids (see CONF_LEGACY_IDS).
     coordinator = OctopusNZCoordinator(
-        hass, entry, api, entry.data[CONF_ACCOUNT_NUMBER]
+        hass,
+        entry,
+        api,
+        entry.data[CONF_ACCOUNT_NUMBER],
+        entry.data.get(CONF_PROPERTY_ID),
+        entry.data.get(CONF_LEGACY_IDS, CONF_PROPERTY_ID not in entry.data),
     )
     await coordinator.async_config_entry_first_refresh()
 
